@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kid Care Dashboard</title>
+
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background:#f2f4f7;
+  padding:15px;
+}
+
+h2 { text-align:center; }
+
+.kid {
+  background:white;
+  padding:15px;
+  margin-bottom:18px;
+  border-radius:14px;
+  box-shadow:0 4px 10px rgba(0,0,0,0.08);
+}
+
+.overdue {
+  background:#ffe6e6;
+}
+
+.nameInput {
+  font-size:20px;
+  font-weight:600;
+  border:none;
+  border-bottom:1px solid #ddd;
+  width:100%;
+  margin-bottom:10px;
+}
+
+.section {
+  margin-top:10px;
+  padding-top:8px;
+  border-top:1px solid #eee;
+}
+
+label {
+  font-size:13px;
+  color:#666;
+}
+
+input[type="number"],
+input[type="datetime-local"] {
+  width:100%;
+  padding:6px;
+  margin:4px 0 6px 0;
+}
+
+.timer {
+  font-weight:bold;
+  font-size:14px;
+}
+
+button {
+  padding:8px 10px;
+  margin-bottom:10px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>👶 Kid Care Dashboard</h2>
+<button onclick="enableNotifications()">Enable Notifications</button>
+
+<div id="kids"></div>
+
+<script>
+const kidCount = 9;
+let kids = [];
+let notified = {};
+
+function enableNotifications(){
+  if("Notification" in window){
+    Notification.requestPermission();
+  }
+}
+
+function save(){
+  localStorage.setItem("kidCareData", JSON.stringify(kids));
+}
+
+function load(){
+  const data = localStorage.getItem("kidCareData");
+  if(data) kids = JSON.parse(data);
+}
+
+function createKids(){
+  for(let i=0;i<kidCount;i++){
+    kids.push({
+      name:"Kid " + (i+1),
+      bottleInterval:3,
+      diaperInterval:2,
+      mealInterval:4,
+      lastBottle:null,
+      lastDiaper:null,
+      lastMeal:null
+    });
+  }
+}
+
+function notify(msg){
+  if(Notification.permission === "granted"){
+    new Notification(msg);
+  }
+}
+
+function nextTime(last, interval){
+  if(!last) return null;
+  return last + interval * 60 * 60 * 1000;
+}
+
+function formatRemaining(ms){
+  if(ms <= 0) return "OVERDUE";
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${h}h ${m}m ${s}s`;
+}
+
+function buildEvent(index, type, label){
+  const kid = kids[index];
+  const interval = kid[type+"Interval"];
+  const last = kid["last"+type];
+  const due = nextTime(last, interval);
+  const now = Date.now();
+  const remaining = due ? due - now : null;
+
+  if(remaining !== null && remaining <= 0 && !notified[type+index]){
+    notify(kid.name + " needs " + label);
+    notified[type+index] = true;
+  }
+
+  return `
+    <div class="section">
+      <label>${label} every (hours)</label>
+      <input type="number"
+        value="${interval}"
+        onchange="update(${index}, '${type}Interval', this.value)">
+
+      <label>Last ${label}</label>
+      <input type="datetime-local"
+        value="${formatInputDate(last)}"
+        onchange="setTime(${index}, 'last${type}', this.value)">
+
+      <div class="timer">
+        ${remaining !== null ? formatRemaining(remaining) : "Not set"}
+      </div>
+
+      <button onclick="logNow(${index}, 'last${type}')">
+        Log ${label} Now
+      </button>
+    </div>
+  `;
+}
+
+function render(){
+  const container = document.getElementById("kids");
+  container.innerHTML = "";
+
+  kids.forEach((kid, index)=>{
+    const div = document.createElement("div");
+    div.className = "kid";
+
+    div.innerHTML = `
+      <input class="nameInput"
+        value="${kid.name}"
+        onchange="update(${index}, 'name', this.value)">
+
+      ${buildEvent(index, "Bottle", "Bottle")}
+      ${buildEvent(index, "Diaper", "Diaper")}
+      ${buildEvent(index, "Meal", "Meal")}
+    `;
+
+    container.appendChild(div);
+  });
+
+  save();
+}
+
+function update(index, field, value){
+  if(field.includes("Interval")){
+    kids[index][field] = Number(value);
+  } else {
+    kids[index][field] = value;
+  }
+  save();
+}
+
+function setTime(index, field, value){
+  if(!value) return;
+  const date = new Date(value);
+  kids[index][field] = date.getTime();
+  notified[field+index] = false;
+  save();
+  render();
+}
+
+function logNow(index, field){
+  kids[index][field] = Date.now();
+  notified[field+index] = false;
+  save();
+  render();
+}
+
+function formatInputDate(timestamp){
+  if(!timestamp) return "";
+  const d = new Date(timestamp);
+  const pad = n => n.toString().padStart(2,"0");
+  return d.getFullYear() + "-" +
+    pad(d.getMonth()+1) + "-" +
+    pad(d.getDate()) + "T" +
+    pad(d.getHours()) + ":" +
+    pad(d.getMinutes());
+}
+
+load();
+if(kids.length === 0) createKids();
+setInterval(render, 1000);
+render();
+</script>
+
+</body>
+</html>
